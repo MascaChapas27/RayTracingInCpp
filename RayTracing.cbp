@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="RayTracing" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Debug">
+				<Option output="bin/Debug/RayTracing" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Debug/" />
+				<Option type="0" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-g" />
+				</Compiler>
+			</Target>
+			<Target title="Release">
+				<Option output="bin/Release/RayTracing" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Option use_console_runner="0" />
+				<Compiler>
+					<Add option="-O2" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+			<Add directory="C:/SFML-2.5.1/include" />
+		</Compiler>
+		<Linker>
+			<Add library="sfml-system" />
+			<Add library="sfml-window" />
+			<Add library="sfml-graphics" />
+			<Add directory="C:/SFML-2.5.1/lib" />
+		</Linker>
+		<Unit filename="aabb.hpp" />
+		<Unit filename="bvh_node.hpp" />
+		<Unit filename="camera.hpp" />
+		<Unit filename="checker_texture.hpp" />
+		<Unit filename="constant_texture.hpp" />
+		<Unit filename="dielectric.hpp" />
+		<Unit filename="hitable.hpp" />
+		<Unit filename="hitable_list.hpp" />
+		<Unit filename="lambertian.hpp" />
+		<Unit filename="main.cpp" />
+		<Unit filename="material.hpp" />
+		<Unit filename="metal.hpp" />
+		<Unit filename="moving_sphere.hpp" />
+		<Unit filename="noise_texture.hpp" />
+		<Unit filename="perlin.hpp" />
+		<Unit filename="random.hpp" />
+		<Unit filename="ray.hpp" />
+		<Unit filename="sphere.hpp" />
+		<Unit filename="texture.hpp" />
+		<Unit filename="vec3.hpp" />
+		<Extensions>
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
