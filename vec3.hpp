@@ -32,6 +32,7 @@ class vec3 {
         vec3& operator/=(const vec3 &v2);
         vec3& operator*=(const float t);
         vec3& operator/=(const float t);
+        bool operator==(const vec3 &vec2);
 
         float length() const{
             return sqrt(e[0]*e[0] + e[1]*e[1] + e[2]*e[2]);
@@ -141,6 +142,10 @@ vec3& vec3::operator/=(const float t){
     e[1] *= k;
     e[2] *= k;
     return *this;
+}
+
+bool vec3::operator==(const vec3 &vec2){
+    return vec2.r() == this->r() && vec2.g() == this->g() && vec2.b() == this->b();
 }
 
 vec3 unit_vector(vec3 v){

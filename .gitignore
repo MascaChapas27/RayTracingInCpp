@@ -1,0 +1,4 @@
+# Ignore files, images and tilemaps created
+files/*
+images/*
+tilemaps/*
