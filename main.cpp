@@ -23,23 +23,43 @@
 #include <float.h>
 #include <functional>
 #include <fstream>
-#include <omp.h>
-using namespace std;
+#include <unistd.h>
+#include <experimental/filesystem>
+#include <vector>
 
 const int nx = 1024;
 const int ny = 512;
-int ns = 30;
+int ns = 5;
 int frames = 1;
 
-const int max_depth = 16;
+int max_depth = 16;
 
-int bounces[max_depth+2] = {0};
+std::string directoryName = std::string("results/unnamed");
+
+// From numbers 0 to max_depth+1 stores the amount of rays
+// that bounced that number of times
+std::vector<int> bounces;
 
 int blackRays = 0;
 
 const int TILE_SIZE = 4;
 
-float tiles[nx/TILE_SIZE][ny/TILE_SIZE] = {0};
+// For each tile stores the number of bounces for its rays
+float bouncesPerTile[nx/TILE_SIZE][ny/TILE_SIZE] = {0};
+
+// For each tile stores the amount of rays traced
+float raysPerTile[nx/TILE_SIZE][ny/TILE_SIZE] = {0};
+
+// For each tile stores a moving average for the number of bounces of its rays
+float bouncesPerTileMovingAvg[nx/TILE_SIZE][ny/TILE_SIZE] = {-1};
+
+// The new number of bounces will be multiplied by this and the old one will be
+// multiplied by 1-this:
+// movingAverage = oldValue*(1-MOVING_AVG_FACTOR) + newValue*MOVING_AVG_FACTOR;
+const float MOVING_AVG_FACTOR = 0.5;
+
+// True if the current scene's sky is black, false otherwise
+bool darkScene;
 
 vec3 lookfrom(278, 278, -800);
 vec3 lookat(278, 278, 0);
@@ -50,6 +70,8 @@ float vfov = 40.0;
 camera cam(lookfrom, lookat, vec3(0,1,0), vfov, float(nx)/float(ny), aperture, dist_to_focus,0.0,1.0);
 
 bvh_node * random_scene() {
+
+    darkScene = false;
 
     lookfrom = vec3(13,2,3);
     lookat = vec3(0,0,0);
@@ -94,6 +116,8 @@ bvh_node * random_scene() {
 
 bvh_node * two_spheres() {
 
+    darkScene = false;
+
     lookfrom = vec3(13,2,3);
     lookat = vec3(0,0,0);
     dist_to_focus = 10.0;
@@ -111,6 +135,8 @@ bvh_node * two_spheres() {
 }
 
 bvh_node * noisy_spheres() {
+
+    darkScene = false;
     
     lookfrom = vec3(13,2,3);
     lookat = vec3(0,0,0);
@@ -128,6 +154,8 @@ bvh_node * noisy_spheres() {
 }
 
 bvh_node * image_on_sphere() {
+
+    darkScene = false;
 
     lookfrom = vec3(13,2,3);
     lookat = vec3(0,0,0);
@@ -147,6 +175,8 @@ bvh_node * image_on_sphere() {
 
 bvh_node * rectangle_light() {
 
+    darkScene = true;
+
     lookfrom = vec3(30,7,20);
     lookat = vec3(0,0,0);
     dist_to_focus = 10.0;
@@ -165,6 +195,8 @@ bvh_node * rectangle_light() {
 }
 
 bvh_node * sphere_light() {
+
+    darkScene = true;
 
     lookfrom = vec3(30,7,3);
     lookat = vec3(0,0,0);
@@ -188,6 +220,8 @@ bvh_node * sphere_light() {
 
 bvh_node *cornell_box()
 {
+    darkScene = true;
+
     lookfrom = vec3(278, 278, -800);
     lookat = vec3(278, 278, 0);
     dist_to_focus = 10.0;
@@ -235,12 +269,16 @@ vec3 colorLight(const ray& r, hitable *world, int depth, int x, int y) {
         }
         else{
             bounces[depth+1]++;
-            tiles[x/TILE_SIZE][y/TILE_SIZE] += (float)(depth+1)/(TILE_SIZE*TILE_SIZE*ns);
+            raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
+            bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += (depth+1);
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
             return emitted;
         }
     } else {
         bounces[depth]++;
-        tiles[x/TILE_SIZE][y/TILE_SIZE] += (float)depth/(TILE_SIZE*TILE_SIZE*ns);
+        bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += depth;
+        raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
+        bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
         vec3 unit_direction = unit_vector(r.direction());
         float t = 0.5 * (unit_direction.y() + 1.0);
         return (1.0-t)*vec3(1.0,1.0,1.0) + t*vec3(0.5, 0.7, 1.0);
@@ -261,12 +299,16 @@ vec3 colorDark(const ray& r, hitable *world, int depth, int x, int y) {
         }
         else{
             bounces[depth+1]++;
-            tiles[x/TILE_SIZE][y/TILE_SIZE] += (float)(depth+1)/(TILE_SIZE*TILE_SIZE*ns);
+            raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
+            bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += (depth+1);
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
             return emitted;
         }
     } else {
         bounces[depth]++;
-        tiles[x/TILE_SIZE][y/TILE_SIZE] += (float)depth/(TILE_SIZE*TILE_SIZE*ns);
+        raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
+        bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += depth;
+        bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
         return vec3(0,0,0);
     }
 }
@@ -275,7 +317,35 @@ bvh_node * world;
 
 sf::Image image;
 
-void calculateDark(int start_y, int end_y, int start_x, int end_x)
+void calculateBetter(int start_y, int end_y, int start_x, int end_x)
+{
+    for(int j = start_y; j <= end_y; j++){
+        for(int i = start_x; i <= end_x; i++){
+            vec3 col(0,0,0);
+            int s;
+            for(s=0;s<ns;s++){
+                if(s > 0 && bouncesPerTileMovingAvg[i/TILE_SIZE][j/TILE_SIZE] < 1) break;
+
+                float u = float(i+random_double()) / float(nx);
+                float v = float(j+random_double()) / float(ny);
+                ray r = cam.get_ray(u,v);
+                vec3 currentCol = darkScene ? colorDark(r,world,0, i, j) : colorLight(r,world,0, i, j);
+                if(currentCol == vec3(0,0,0))
+                    blackRays++;
+                col += currentCol;
+            }
+            col /= float(s);
+            col = vec3( sqrt(col[0]),sqrt(col[1]),sqrt(col[2]) );
+            int ir = int(255.99*col[0]);
+            int ig = int(255.99*col[1]);
+            int ib = int(255.99*col[2]);
+
+            image.setPixel(i,ny-j-1,sf::Color(ir,ig,ib));
+        }
+    }
+}
+
+void calculate(int start_y, int end_y, int start_x, int end_x)
 {
     for(int j = start_y; j <= end_y; j++){
         for(int i = start_x; i <= end_x; i++){
@@ -284,7 +354,7 @@ void calculateDark(int start_y, int end_y, int start_x, int end_x)
                 float u = float(i+random_double()) / float(nx);
                 float v = float(j+random_double()) / float(ny);
                 ray r = cam.get_ray(u,v);
-                vec3 currentCol = colorDark(r,world,0, i, j);
+                vec3 currentCol = darkScene ? colorDark(r,world,0, i, j) : colorLight(r,world,0, i, j);
                 if(currentCol == vec3(0,0,0))
                     blackRays++;
                 col += currentCol;
@@ -300,42 +370,10 @@ void calculateDark(int start_y, int end_y, int start_x, int end_x)
     }
 }
 
-void calculateLight(int start_y, int end_y, int start_x, int end_x)
-{
-    for(int j = start_y; j <= end_y; j++){
-        for(int i = start_x; i <= end_x; i++){
-            vec3 col(0,0,0);
-            for(int s=0;s<ns;s++){
-                float u = float(i+random_double()) / float(nx);
-                float v = float(j+random_double()) / float(ny);
-                ray r = cam.get_ray(u,v);
-                vec3 currentCol = colorLight(r,world,0,i,j);
-                if(currentCol == vec3(0,0,0))
-                    blackRays++;
-                col += currentCol;
-            }
-            col /= float(ns);
-            col = vec3( sqrt(col[0]),sqrt(col[1]),sqrt(col[2]) );
-            int ir = int(255.99*col[0]);
-            int ig = int(255.99*col[1]);
-            int ib = int(255.99*col[2]);
-
-            image.setPixel(i,ny-j-1,sf::Color(ir,ig,ib));
-        }
-    }
-}
-
-void masterThread(){
-
-    char mode;
-    std::cout << "¿Qué modo?" << std::endl;
-    std::cout << "N: Normal" << std::endl;
-    //std::cout << "B: ..." << std::endl;
-    std::cout << "Introduce un modo: ";
-    std::cin >> mode;
-
-    char scene;
-    std::cout << "¿Qué escena?" << std::endl;
+void printHelp(char * programName){
+    std::cout << programName << " -m (mode) -s (scene) -r (rays per pixel) -b (max bounces per ray) -f (number of frames) -d (directory name) [-h]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Scenes available:" << std::endl;
     std::cout << "c: Cornell Box" << std::endl;
     std::cout << "w: Ray Tracing In One Weekend" << std::endl;
     std::cout << "2: Two Spheres" << std::endl;
@@ -343,40 +381,83 @@ void masterThread(){
     std::cout << "i: Image on Sphere" << std::endl;
     std::cout << "r: Rectangular Light Source" << std::endl;
     std::cout << "s: Sphere Light Source" << std::endl;
-    std::cout << "Introduce una escena: ";
-    std::cin >> scene;
+    std::cout << std::endl;
+    std::cout << "Modes available:" << std::endl;
+    std::cout << "N: Normal" << std::endl;
+    std::cout << "B: Better" << std::endl;
+    std::cout << std::endl;
+}
 
-    std::cout << std::endl << "¿Cuántos rayos por píxel?" << std::endl;
-    std::cout << "ns = ";
-    std::cin >> ns;
+void masterThread(int argc, char * argv[]){
+
+    std::experimental::filesystem::create_directory("results");
+
+    char mode = 'N';
+    char scene = 'w';
+    int option;
+    
+    // Se extraen los parametros
+    while ((option = getopt(argc, argv, "m:s:r:b:f:d:h")) != -1)
+    {
+        switch (option)
+        {
+        case 'm':
+            mode = optarg[0];
+            break;
+        case 's':
+            scene = optarg[0];
+            break;
+        case 'r':
+            ns = atoi(optarg);
+            break;
+        case 'b':
+            max_depth = atoi(optarg);
+            break;
+        case 'f':
+            frames = atoi(optarg);
+            break;
+        case 'd':
+            directoryName = std::string("results/")+std::string(optarg);
+            break;
+        case 'h':
+            printHelp(argv[0]);
+            exit(EXIT_SUCCESS);
+        default:
+            printHelp(argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
 
     if(ns < 0){
-        std::cerr << "ERROR: debe ser mayor o igual que 0" << std::endl;
+        std::cerr << "ERROR: rays per pixel must be >= 0" << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    std::cout << std::endl << "¿Cuántos frames?" << std::endl;
-    std::cout << "frames = ";
-    std::cin >> frames;
     if(frames < 1){
-        std::cerr << "ERROR: debe ser mayor que 0" << std::endl;
+        std::cerr << "ERROR: number of frames must be >= 1" << std::endl;
         exit(EXIT_FAILURE);
     }
+
+    bounces = std::vector<int>(max_depth+2);
 
     time_t tt;
     struct tm* ti;
     time(&tt);
     ti = localtime(&tt);
 
-    std::string fileName = std::string("files/")+scene+mode+std::string("_")+scene+std::string("_")+std::string(asctime(ti))+std::string(".txt");
+    if(!std::experimental::filesystem::create_directory(directoryName)){
+        int directoryNumber = 1;
+        while(!std::experimental::filesystem::create_directory(directoryName+std::to_string(directoryNumber))){
+            directoryNumber++;
+        }
+    }
 
-    fileName.replace(fileName.find('\n'),1,"");
-
-    std::fstream file(fileName,std::ios_base::out);
+    std::fstream file(directoryName+std::string("/log.txt"),std::ios_base::out);
 
     file << "Escena: " << scene << std::endl;
     file << "Modo: " << mode << std::endl;
     file << "Rayos por píxel: " << ns << std::endl;
+    file << "Rebotes como máximo por rayo: " << max_depth << std::endl;
 
     //std::vector<sf::Thread*> threads;
     sf::Clock clock;
@@ -387,80 +468,33 @@ void masterThread(){
 
         cam.origin = lookfrom;
 
-        switch(mode){
-        case 'B':
-            /*
-            threads.push_back(new sf::Thread(std::bind(throwThreadsBigShot,0,ny/2,0,nx/2)));
-            threads.push_back(new sf::Thread(std::bind(throwThreadsBigShot,0,ny/2,nx/2,nx)));
-            threads.push_back(new sf::Thread(std::bind(throwThreadsBigShot,ny/2,ny,0,nx/2)));
-            threads.push_back(new sf::Thread(std::bind(throwThreadsBigShot,ny/2,ny,nx/2,nx)));
-            */
-            //calculate(0,ny,0,nx);
-            break;
-        case 'N':
-            /*
-            threads.push_back(new sf::Thread(std::bind(throwThreads,0,ny/2,0,nx/2)));
-            threads.push_back(new sf::Thread(std::bind(throwThreads,0,ny/2,nx/2,nx)));
-            threads.push_back(new sf::Thread(std::bind(throwThreads,ny/2,ny,0,nx/2)));
-            threads.push_back(new sf::Thread(std::bind(throwThreads,ny/2,ny,nx/2,nx)));
-            */
-            switch(scene){
-            case 'c':
-                
+        switch(scene){
+            case 'c':   
                 world = cornell_box();
-
-                clock.restart();
-                calculateDark(0,ny-1,0,nx-1);
-
                 break;
             case 'w':
-
                 world = random_scene();
-
-                clock.restart();
-                calculateLight(0,ny-1,0,nx-1);
                 break;
             case '2':
-
                 world = two_spheres();
-
-                clock.restart();
-                calculateLight(0,ny-1,0,nx-1);
                 break;
             case 'n':
-
                 world = noisy_spheres();
-
-                clock.restart();
-                calculateLight(0,ny-1,0,nx-1);
                 break;
             case 'i':
-
                 world = image_on_sphere();
-
-                clock.restart();
-                calculateLight(0,ny-1,0,nx-1);
                 break;
             case 'r':
-
                 world = rectangle_light();
-
-                clock.restart();
-                calculateDark(0,ny-1,0,nx-1);
                 break;
             case 's':
-
                 world = sphere_light();
-
-                clock.restart();
-                calculateDark(0,ny-1,0,nx-1);
                 break;
-            }
-            break;
-        default:
-            exit(EXIT_FAILURE);
-            break;
         }
+
+        clock.restart();
+        if(mode == 'N') calculate(0,ny-1,0,nx-1);
+        else calculateBetter(0,ny-1,0,nx-1);
 
         /*clock.restart();
 
@@ -477,21 +511,19 @@ void masterThread(){
 
         file << "Tiempo: " << clock.getElapsedTime().asSeconds() << " segundos" << std::endl << std::endl;
 
-        if(i==frames) {
-            image.saveToFile(std::string("images/")+mode+std::string("_")+scene+std::string("_")+std::string(asctime(ti))+std::string(".png"));
-            
-            sf::Image tileMap;
-            tileMap.create(nx, ny);
-            for(int i=0;i<nx;i++){
-                for(int j=0;j<ny;j++){
+        image.saveToFile(directoryName+std::string("/image")+std::to_string(i)+std::string(".png"));
 
-                    float grayLevel = 255.99-(255.99*(tiles[i/TILE_SIZE][j/TILE_SIZE]/(max_depth+1)));
+        sf::Image tileMap;
+        tileMap.create(nx, ny);
+        for(int i=0;i<nx;i++){
+            for(int j=0;j<ny;j++){
 
-                    tileMap.setPixel(i,ny-j-1,sf::Color(grayLevel,grayLevel,grayLevel));
-                }
+                float grayLevel = 255.99-(255.99*((bouncesPerTile[i/TILE_SIZE][j/TILE_SIZE]/raysPerTile[i/TILE_SIZE][j/TILE_SIZE])/(max_depth+1)));
+
+                tileMap.setPixel(i,ny-j-1,sf::Color(grayLevel,grayLevel,grayLevel));
             }
-            tileMap.saveToFile(std::string("tilemaps/")+mode+std::string("_")+scene+std::string("_")+std::string(asctime(ti))+std::string(".png"));
         }
+        tileMap.saveToFile(directoryName+std::string("/tilemap")+std::to_string(i)+std::string(".png"));
 
         int totalRays = 0;
         int totalBounces = 0;
@@ -512,8 +544,8 @@ void masterThread(){
         file << "Media de rebotes: " << (double)totalBounces/totalRays << std::endl;
 
         blackRays = 0;
-        memset(bounces,0,sizeof(int)*(max_depth+2));
-        memset(tiles,0,TILE_SIZE*sizeof(float)*TILE_SIZE*sizeof(float));
+        bounces.clear();
+        memset(bouncesPerTile,0,TILE_SIZE*sizeof(float)*TILE_SIZE*sizeof(float));
     }
     /*
     for(sf::Thread *t : threads){
@@ -522,14 +554,14 @@ void masterThread(){
     */
 }
 
-int main() {
+int main(int argc, char * argv[]) {
 
     //sf::RenderWindow window(sf::VideoMode(nx, ny), "BigShot");
     //window.setFramerateLimit(60);
 
     image.create(nx, ny);
 
-    sf::Thread master(masterThread);
+    sf::Thread master(std::bind(masterThread, argc, argv));
 
     master.launch();
 

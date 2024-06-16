@@ -1,4 +1,8 @@
-# Ignore files, images and tilemaps created
-files/*
-images/*
-tilemaps/*
+# Ignore results
+results
+
+# Ignore bash scripts
+*.sh
+
+# Ignore executables
+*.out
