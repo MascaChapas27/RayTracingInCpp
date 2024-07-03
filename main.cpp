@@ -53,6 +53,12 @@ float raysPerTile[nx/TILE_SIZE][ny/TILE_SIZE] = {0};
 // For each tile stores a moving average for the number of bounces of its rays
 float bouncesPerTileMovingAvg[nx/TILE_SIZE][ny/TILE_SIZE] = {-1};
 
+// Global variable that stores the total amount of bounces
+int totalBounces = 0;
+
+// Global variable that stores the total amount of rays
+int totalRays = 0;
+
 // The new number of bounces will be multiplied by this and the old one will be
 // multiplied by 1-this:
 // movingAverage = oldValue*(1-MOVING_AVG_FACTOR) + newValue*MOVING_AVG_FACTOR;
@@ -271,14 +277,28 @@ vec3 colorLight(const ray& r, hitable *world, int depth, int x, int y) {
             bounces[depth+1]++;
             raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
             bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += (depth+1);
-            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
+            if(bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] != -1)
+                bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
+            else
+                bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = depth+1;
+            
+            totalBounces += depth+1;
+            totalRays++;
+            
             return emitted;
         }
     } else {
         bounces[depth]++;
         bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += depth;
         raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
-        bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
+        if(bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] != -1)
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
+        else
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = depth;
+        
+        totalBounces += depth;
+        totalRays++;
+        
         vec3 unit_direction = unit_vector(r.direction());
         float t = 0.5 * (unit_direction.y() + 1.0);
         return (1.0-t)*vec3(1.0,1.0,1.0) + t*vec3(0.5, 0.7, 1.0);
@@ -301,14 +321,28 @@ vec3 colorDark(const ray& r, hitable *world, int depth, int x, int y) {
             bounces[depth+1]++;
             raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
             bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += (depth+1);
-            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
+            if(bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] != -1)
+                bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + (depth+1)*MOVING_AVG_FACTOR;
+            else
+                bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = depth+1;
+            
+            totalBounces += depth+1;
+            totalRays++;
+
             return emitted;
         }
     } else {
         bounces[depth]++;
         raysPerTile[x/TILE_SIZE][y/TILE_SIZE]++;
         bouncesPerTile[x/TILE_SIZE][y/TILE_SIZE] += depth;
-        bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
+        if(bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] != -1)
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE]*(1-MOVING_AVG_FACTOR) + depth*MOVING_AVG_FACTOR;
+        else
+            bouncesPerTileMovingAvg[x/TILE_SIZE][y/TILE_SIZE] = depth;
+        
+        totalBounces += depth;
+        totalRays++;
+        
         return vec3(0,0,0);
     }
 }
@@ -324,7 +358,7 @@ void calculateBetter(int start_y, int end_y, int start_x, int end_x)
             vec3 col(0,0,0);
             int s;
             for(s=0;s<ns;s++){
-                if(s > 0 && bouncesPerTileMovingAvg[i/TILE_SIZE][j/TILE_SIZE] < 1) break;
+                if(s > 0 && (float)s/ns > (bouncesPerTileMovingAvg[i/TILE_SIZE][j/TILE_SIZE]/((float)totalBounces/totalRays))) break;
 
                 float u = float(i+random_double()) / float(nx);
                 float v = float(j+random_double()) / float(ny);
@@ -450,6 +484,7 @@ void masterThread(int argc, char * argv[]){
         while(!std::experimental::filesystem::create_directory(directoryName+std::to_string(directoryNumber))){
             directoryNumber++;
         }
+        directoryName+=std::to_string(directoryNumber);
     }
 
     std::fstream file(directoryName+std::string("/log.txt"),std::ios_base::out);
